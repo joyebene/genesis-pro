@@ -1,4 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { db } from "./firebase";
+import {
+  collection, getDocs, addDoc,
+  updateDoc,
+  doc,
+} from "firebase/firestore";
 
 interface Transaction {
   id: number;
@@ -10,7 +16,7 @@ interface Transaction {
 }
 
 interface WithdrawalRequest {
-  id: number;
+  id: string | number;
   amount: number;
   wallet: string;
   coin: string;
@@ -19,7 +25,7 @@ interface WithdrawalRequest {
 }
 
 interface Client {
-  id: number;
+  id: string;
   name: string;
   email: string;
   password: string;
@@ -34,7 +40,6 @@ interface Client {
   installments: any[];
   joined: string;
 }
-
 interface FormData {
   name?: string;
   email?: string;
@@ -107,18 +112,7 @@ const FEATURES = [
   },
 ];
 
-const initialClients = [
-  {
-    id: 1, name: "John Adebayo", email: "john@example.com", password: "pass123",
-    package: "gold", balance: 18450.00, totalDeposit: 15000, totalWithdrawn: 0, totalProfit: 3450, roi: 23.0,
-    transactions: [
-      { id: 1, type: "deposit", amount: 15000, date: "2024-01-10", status: "confirmed", note: "Initial deposit" },
-      { id: 2, type: "profit", amount: 2400, date: "2024-01-17", status: "confirmed", note: "Week 1 profit" },
-      { id: 3, type: "profit", amount: 1050, date: "2024-01-24", status: "confirmed", note: "Week 2 profit" },
-    ],
-    withdrawalRequests: [], joined: "2024-01-10", installments: [],
-  },
-];
+
 
 // ─── Utilities ────────────────────────────────────────────────────
 const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
@@ -341,7 +335,7 @@ const S = `
 // ─── App ──────────────────────────────────────────────────────────
 export default function App() {
   const [view, setView] = useState("home");
-  const [clients, setClients] = useState<Client[]>(initialClients);
+  const [clients, setClients] = useState<Client[]>([]);
   const [user, setUser] = useState<Client | null>(null);
   const [modal, setModal] = useState<"deposit" | "withdraw" | null>(null);
   const [dashTab, setDashTab] = useState("overview");
@@ -354,12 +348,38 @@ export default function App() {
   const [installments, setInstallments] = useState(1);
   const [featTab, setFeatTab] = useState("crypto");
   const [, setMobileMenu] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const go = (v: string) => { setView(v); setErr(""); setForm({}); setMobileMenu(false); window.scrollTo(0, 0); };
   const notify = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3500); };
   const copy = (txt: string) => { navigator.clipboard.writeText(txt); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
-  const currentUser = () => clients.find(c => c.id === user?.id) || user;
+  const currentUser = () => {
+    if (!user) return null;
+    return clients.find(c => c.id === user.id) || user;
+  };
+
+  // Fetch Clients
+  useEffect(() => {
+    const fetchClients = async () => {
+      setLoading(true);
+      try {
+        const clientsCollection = collection(db, "clients");
+        const clientSnapshot = await getDocs(clientsCollection);
+        const clientList = clientSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data() as Omit<Client, 'id'>
+        })) as Client[];
+        setClients(clientList);
+      } catch (error) {
+        console.error("Error fetching clients: ", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchClients();
+  }, []);
 
   // Login
   const login = () => {
@@ -369,47 +389,239 @@ export default function App() {
   };
 
   // Register
-  const register = () => {
-    if (!form.name || !form.email || !form.password || !form.package) { setErr("All fields are required."); return; }
-    if (clients.find(c => c.email === form.email)) { setErr("Email already registered."); return; }
-    const nc = { id: Date.now(), name: form.name, email: form.email, password: form.password, package: form.package, balance: 0, totalDeposit: 0, totalWithdrawn: 0, totalProfit: 0, roi: 0, transactions: [], withdrawalRequests: [], installments: [], joined: new Date().toISOString().split("T")[0] };
-    setClients(p => [...p, nc]); setUser(nc); go("dashboard");
-    notify("Welcome to GenesisProLtd! Your account is ready.");
+  const register = async () => {
+    if (!form.name || !form.email || !form.password || !form.package) {
+      setErr("All fields are required.");
+      return;
+    }
+
+    // Check if email exists
+    const existing = clients.find(c => c.email === form.email);
+    if (existing) {
+      setErr("Email already registered.");
+      return;
+    }
+
+    try {
+      const newClient: Omit<Client, 'id'> = {
+        name: form.name,
+        email: form.email,
+        password: form.password, // ⚠️ In production, use Firebase Auth + hash password!
+        package: form.package,
+        balance: 0,
+        totalDeposit: 0,
+        totalWithdrawn: 0,
+        totalProfit: 0,
+        roi: "0",
+        transactions: [],
+        withdrawalRequests: [],
+        installments: [],
+        joined: new Date().toISOString().split("T")[0],
+      };
+
+      const docRef = await addDoc(collection(db, "clients"), newClient);
+
+      const createdClient: Client = { id: docRef.id, ...newClient };
+
+      setClients(prev => [...prev, createdClient]);
+      setUser(createdClient);
+      go("dashboard");
+      notify("Welcome to GenesisProLtd! Your account is ready.");
+    } catch (error) {
+      console.error(error);
+      setErr("Failed to create account.");
+    }
+  };
+
+  const refreshClients = async () => {
+    try {
+      const clientsCollection = collection(db, "clients");
+      const snapshot = await getDocs(clientsCollection);
+      const updatedList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data() as Omit<Client, 'id'>
+      })) as Client[];
+      setClients(updatedList);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // Withdraw
-  const withdraw = () => {
+  const withdraw = async () => {
     const cu = currentUser();
-    if (!form.amount || isNaN(form.amount) || +form.amount <= 0) { setErr("Enter a valid amount."); return; }
-    if (+form.amount > cu?.balance! || 0) { setErr("Insufficient balance."); return; }
-    if (!form.wallet) { setErr("Enter your wallet address."); return; }
-    const req: WithdrawalRequest = { id: Date.now(), amount: +form.amount, wallet: form.wallet, coin: form.coin || "USDT", date: new Date().toISOString().split("T")[0], status: "pending" };
-    setClients(p => p.map(c => c.id === cu?.id ? { ...c, withdrawalRequests: [...c.withdrawalRequests, req], transactions: [...c.transactions, { id: Date.now(), type: "withdrawal", amount: req.amount, date: req.date, status: "pending", note: `Withdrawal to ${req.wallet.slice(0, 14)}...` }] } : c));
-    setModal(null); setForm({}); notify("Withdrawal request submitted. We'll process it shortly.");
+    if (!cu) return;
+
+    if (!form.amount || isNaN(form.amount) || +form.amount <= 0) {
+      setErr("Enter a valid amount.");
+      return;
+    }
+    if (+form.amount > cu.balance) {
+      setErr("Insufficient balance.");
+      return;
+    }
+    if (!form.wallet) {
+      setErr("Enter your wallet address.");
+      return;
+    }
+
+    const req: WithdrawalRequest = {
+      id: Date.now(),
+      amount: +form.amount,
+      wallet: form.wallet,
+      coin: form.coin || "USDT",
+      date: new Date().toISOString().split("T")[0],
+      status: "pending"
+    };
+
+    const newTransaction: Transaction = {
+      id: Date.now(),
+      type: "withdrawal",
+      amount: req.amount,
+      date: req.date,
+      status: "pending",
+      note: `Withdrawal to ${req.wallet.slice(0, 14)}...`
+    };
+
+    const clientRef = doc(db, "clients", cu.id);
+
+    try {
+      await updateDoc(clientRef, {
+        withdrawalRequests: [...cu.withdrawalRequests, req],
+        transactions: [...cu.transactions, newTransaction]
+      });
+
+      // Update local state
+      setClients(p => p.map(c =>
+        c.id === cu.id
+          ? {
+            ...c,
+            withdrawalRequests: [...c.withdrawalRequests, req],
+            transactions: [...c.transactions, newTransaction]
+          }
+          : c
+      ));
+
+      setModal(null);
+      setForm({});
+      notify("Withdrawal request submitted. We'll process it shortly.");
+    } catch (error) {
+      console.error(error);
+      notify("Failed to submit withdrawal request.", false);
+    }
   };
 
   // Admin update
-  const adminUpdate = (cid: number, amount: number, type: "deduct" | "profit" | "deposit") => {
+  const adminUpdate = async (cid: string, amount: number, type: "deduct" | "profit" | "deposit") => {
     if (isNaN(amount) || amount <= 0) return;
-    setClients(p => p.map(c => {
-      if (c.id !== cid) return c;
-      const nb = type === "deduct" ? Math.max(0, c.balance - amount) : c.balance + amount;
-      const np = type === "profit" ? c.totalProfit + amount : c.totalProfit;
-      const nd = type === "deposit" ? c.totalDeposit + amount : c.totalDeposit;
-      const roi = nd > 0 ? ((np / nd) * 100).toFixed(1) : 0;
-      return { ...c, balance: nb, totalProfit: np, totalDeposit: nd, roi, transactions: [...c.transactions, { id: Date.now(), type, amount: amount, date: new Date().toISOString().split("T")[0], status: "confirmed", note: `Admin ${type} update` }] };
-    }));
-    notify("Balance updated.");
+
+    const clientRef = doc(db, "clients", cid);
+    const client = clients.find(c => c.id === cid);
+    if (!client) return;
+
+    let newBalance = client.balance;
+    let newTotalDeposit = client.totalDeposit;
+    let newTotalProfit = client.totalProfit;
+
+    if (type === "deduct") newBalance = Math.max(0, newBalance - amount);
+    else if (type === "deposit") {
+      newBalance += amount;
+      newTotalDeposit += amount;
+    } else if (type === "profit") {
+      newBalance += amount;
+      newTotalProfit += amount;
+    }
+
+    const newRoi = newTotalDeposit > 0 ? ((newTotalProfit / newTotalDeposit) * 100).toFixed(1) : "0";
+
+    const newTransaction = {
+      id: Date.now(),
+      type,
+      amount,
+      date: new Date().toISOString().split("T")[0],
+      status: "confirmed",
+      note: `Admin ${type} update`
+    };
+
+    try {
+      await updateDoc(clientRef, {
+        balance: newBalance,
+        totalDeposit: newTotalDeposit,
+        totalProfit: newTotalProfit,
+        roi: newRoi,
+        transactions: [...client.transactions, newTransaction]
+      });
+
+      // Refresh local state
+      setClients(prev => prev.map(c =>
+        c.id === cid ? {
+          ...c,
+          balance: newBalance,
+          totalDeposit: newTotalDeposit,
+          totalProfit: newTotalProfit,
+          roi: newRoi,
+          transactions: [...c.transactions, newTransaction]
+        } : c
+      ));
+
+      notify("Balance updated successfully.");
+      refreshClients();
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // Admin approve withdrawal
-  const approveWithdrawal = (cid: number, rid: number) => {
-    setClients(p => p.map(c => {
-      if (c.id !== cid) return c;
-      const r = c.withdrawalRequests.find(r => r.id === rid); if (!r) return c;
-      return { ...c, balance: c.balance - r.amount, totalWithdrawn: c.totalWithdrawn + r.amount, withdrawalRequests: c.withdrawalRequests.map(r => r.id === rid ? { ...r, status: "approved" } : r), transactions: c.transactions.map(t => t.amount === r.amount && t.status === "pending" ? { ...t, status: "confirmed" } : t) };
-    }));
-    notify("Withdrawal approved.");
+  const approveWithdrawal = async (cid: string, rid: string | number) => {
+    const client = clients.find(c => c.id === cid);
+    if (!client) return;
+
+    const request = client.withdrawalRequests.find(r => String(r.id) === String(rid));
+    if (!request || request.status !== "pending") return;
+
+    const clientRef = doc(db, "clients", cid);
+
+    try {
+      const newBalance = client.balance - request.amount;
+      const newTotalWithdrawn = client.totalWithdrawn + request.amount;
+
+      const updatedWithdrawalRequests = client.withdrawalRequests.map(r =>
+        String(r.id) === String(rid) ? { ...r, status: "approved" } : r
+      );
+
+      const updatedTransactions = client.transactions.map(t =>
+        t.amount === request.amount && t.status === "pending"
+          ? { ...t, status: "confirmed" }
+          : t
+      );
+
+      await updateDoc(clientRef, {
+        balance: newBalance,
+        totalWithdrawn: newTotalWithdrawn,
+        withdrawalRequests: updatedWithdrawalRequests,
+        transactions: updatedTransactions,
+      });
+
+      setClients(prev =>
+        prev.map(c =>
+          c.id === cid
+            ? {
+              ...c,
+              balance: newBalance,
+              totalWithdrawn: newTotalWithdrawn,
+              withdrawalRequests: updatedWithdrawalRequests,
+              transactions: updatedTransactions,
+            } as Client
+            : c
+        )
+      );
+
+      notify("Withdrawal approved successfully.");
+      refreshClients();
+    } catch (error) {
+      console.error("Error approving withdrawal:", error);
+      notify("Failed to approve withdrawal.", false);
+    }
   };
 
   // Installment schedule
@@ -429,6 +641,23 @@ export default function App() {
   return (
     <>
       <style>{S}</style>
+      {loading && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(6, 12, 26, 0.95)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+          flexDirection: "column",
+          color: "#C9A84C",
+          fontSize: "18px"
+        }}>
+          <div style={{ fontSize: "48px", marginBottom: "16px" }}>⏳</div>
+          Loading GenesisProLtd...
+        </div>
+      )}
       {toast && <div className="toast" style={{ background: toast.ok ? "#00C896" : "#FF4444", color: "#fff" }}>{toast.msg}</div>}
 
       {/* DEPOSIT MODAL */}
@@ -965,7 +1194,7 @@ export default function App() {
 interface AdminCardProps {
   client: Client;
   onUpdate: (
-    clientId: number,
+    clientId: string,
     amount: number,
     type: "deduct" | "profit" | "deposit"
   ) => void;
@@ -973,7 +1202,7 @@ interface AdminCardProps {
 
 function AdminCard({ client, onUpdate }: AdminCardProps) {
   const [open, setOpen] = useState(false);
-  const [type, setType] = useState("profit");
+  const [type, setType] = useState<"profit" | "deposit" | "deduct">("profit");
   const [amount, setAmount] = useState("");
   const pkg = PACKAGES.find(p => p.id === client.package);
   const fmt2 = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
@@ -1006,7 +1235,7 @@ function AdminCard({ client, onUpdate }: AdminCardProps) {
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 16 }}>
             <div>
               <label style={{ display: "block", color: "#8B93A7", fontSize: 11, marginBottom: 5, fontWeight: 700 }}>UPDATE TYPE</label>
-              <select aria-label="update type" style={{ background: "#060C1A", border: "1px solid #1E2A40", borderRadius: 6, color: "#E8EAF0", padding: "10px 14px", fontSize: 13, fontFamily: "inherit", outline: "none" }} value={type} onChange={e => setType(e.target.value)}>
+              <select aria-label="update type" style={{ background: "#060C1A", border: "1px solid #1E2A40", borderRadius: 6, color: "#E8EAF0", padding: "10px 14px", fontSize: 13, fontFamily: "inherit", outline: "none" }} value={type} onChange={e => setType(e.target.value as "profit" | "deposit" | "deduct")}>
                 <option value="profit">Add Profit</option>
                 <option value="deposit">Add Deposit</option>
                 <option value="deduct">Deduct Balance</option>
@@ -1016,7 +1245,7 @@ function AdminCard({ client, onUpdate }: AdminCardProps) {
               <label style={{ display: "block", color: "#8B93A7", fontSize: 11, marginBottom: 5, fontWeight: 700 }}>AMOUNT (USD)</label>
               <input style={{ background: "#060C1A", border: "1px solid #1E2A40", borderRadius: 6, color: "#E8EAF0", padding: "10px 14px", fontSize: 13, fontFamily: "inherit", outline: "none", width: 150 }} type="number" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} />
             </div>
-            <button aria-label="update balance" className="btn btn-gold btn-sm" onClick={() => { onUpdate(Number(client.id), Number(amount), type as "profit" | "deduct" | "deposit"); setAmount(""); }}>Update Balance</button>
+            <button aria-label="update balance" className="btn btn-gold btn-sm" onClick={() => { onUpdate(client.id, Number(amount), type as "profit" | "deduct" | "deposit"); setAmount(""); }}>Update Balance</button>
           </div>
           {client.transactions.length > 0 && (
             <div>
