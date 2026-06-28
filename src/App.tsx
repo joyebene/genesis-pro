@@ -1,5 +1,57 @@
 import { useState } from "react";
 
+interface Transaction {
+  id: number;
+  type: string;
+  amount: number;
+  date: string;
+  status: string;
+  note: string;
+}
+
+interface WithdrawalRequest {
+  id: number;
+  amount: number;
+  wallet: string;
+  coin: string;
+  date: string;
+  status: "pending" | "approved" | "rejected";
+}
+
+interface Client {
+  id: number;
+  name: string;
+  email: string;
+  password: string;
+  package: string;
+  balance: number;
+  totalDeposit: number;
+  totalWithdrawn: number;
+  totalProfit: number;
+  roi: number | string;
+  transactions: Transaction[];
+  withdrawalRequests: WithdrawalRequest[];
+  installments: any[];
+  joined: string;
+}
+
+interface FormData {
+  name?: string;
+  email?: string;
+  password?: string;
+  package?: string;
+  amount?: number;
+  wallet?: string;
+  coin?: string;
+}
+
+interface Toast {
+  msg: string;
+  ok: boolean;
+}
+
+
+
 // ─── Data ─────────────────────────────────────────────────────────
 const PACKAGES = [
   { id: "silver", name: "Silver", min: 12000, color: "#C0C0C0", weekly: "12–16%", icon: "🥈", desc: "Ideal for steady, consistent weekly growth." },
@@ -7,7 +59,12 @@ const PACKAGES = [
   { id: "diamond", name: "Diamond", min: 20000, color: "#B9F2FF", weekly: "20–25%", icon: "💎", desc: "Maximum returns for high-net-worth investors." },
 ];
 
-const WALLETS = {
+type Wallet = {
+  address: string;
+  network: string;
+};
+
+const WALLETS: Record<string, Wallet> = {
   BTC: { address: "bc1qeyflc5pe6n5ufzwwmsj9336z7gglrjv2w3fhmu", network: "Bitcoin Network" },
   ETH: { address: "0x195B3B5437D36839de838d27690E99B087FC9dC6", network: "ERC-20" },
   USDT: { address: "0x195B3B5437D36839de838d27690E99B087FC9dC6", network: "ERC-20" },
@@ -64,8 +121,8 @@ const initialClients = [
 ];
 
 // ─── Utilities ────────────────────────────────────────────────────
-const fmt = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
-const fmtD = (d) => new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+const fmtD = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
 // ─── Styles ───────────────────────────────────────────────────────
 const S = `
@@ -284,23 +341,23 @@ const S = `
 // ─── App ──────────────────────────────────────────────────────────
 export default function App() {
   const [view, setView] = useState("home");
-  const [clients, setClients] = useState(initialClients);
-  const [user, setUser] = useState(null);
-  const [modal, setModal] = useState(null);
+  const [clients, setClients] = useState<Client[]>(initialClients);
+  const [user, setUser] = useState<Client | null>(null);
+  const [modal, setModal] = useState<"deposit" | "withdraw" | null>(null);
   const [dashTab, setDashTab] = useState("overview");
   const [adminTab, setAdminTab] = useState("clients");
-  const [form, setForm] = useState({});
+  const [form, setForm] = useState<FormData>({});
   const [err, setErr] = useState("");
-  const [toast, setToast] = useState(null);
+  const [toast, setToast] = useState<Toast | null>(null);
   const [coin, setCoin] = useState("USDT");
   const [copied, setCopied] = useState(false);
   const [installments, setInstallments] = useState(1);
   const [featTab, setFeatTab] = useState("crypto");
-  const [mobileMenu, setMobileMenu] = useState(false);
+  const [, setMobileMenu] = useState(false);
 
-  const go = (v) => { setView(v); setErr(""); setForm({}); setMobileMenu(false); window.scrollTo(0, 0); };
-  const notify = (msg, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3500); };
-  const copy = (txt) => { navigator.clipboard.writeText(txt); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+  const go = (v: string) => { setView(v); setErr(""); setForm({}); setMobileMenu(false); window.scrollTo(0, 0); };
+  const notify = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3500); };
+  const copy = (txt: string) => { navigator.clipboard.writeText(txt); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
   const currentUser = () => clients.find(c => c.id === user?.id) || user;
 
@@ -324,29 +381,29 @@ export default function App() {
   const withdraw = () => {
     const cu = currentUser();
     if (!form.amount || isNaN(form.amount) || +form.amount <= 0) { setErr("Enter a valid amount."); return; }
-    if (+form.amount > cu.balance) { setErr("Insufficient balance."); return; }
+    if (+form.amount > cu?.balance! || 0) { setErr("Insufficient balance."); return; }
     if (!form.wallet) { setErr("Enter your wallet address."); return; }
-    const req = { id: Date.now(), amount: +form.amount, wallet: form.wallet, coin: form.coin || "USDT", date: new Date().toISOString().split("T")[0], status: "pending" };
-    setClients(p => p.map(c => c.id === cu.id ? { ...c, withdrawalRequests: [...c.withdrawalRequests, req], transactions: [...c.transactions, { id: Date.now(), type: "withdrawal", amount: +form.amount, date: req.date, status: "pending", note: `Withdrawal to ${req.wallet.slice(0, 14)}...` }] } : c));
+    const req: WithdrawalRequest = { id: Date.now(), amount: +form.amount, wallet: form.wallet, coin: form.coin || "USDT", date: new Date().toISOString().split("T")[0], status: "pending" };
+    setClients(p => p.map(c => c.id === cu?.id ? { ...c, withdrawalRequests: [...c.withdrawalRequests, req], transactions: [...c.transactions, { id: Date.now(), type: "withdrawal", amount: req.amount, date: req.date, status: "pending", note: `Withdrawal to ${req.wallet.slice(0, 14)}...` }] } : c));
     setModal(null); setForm({}); notify("Withdrawal request submitted. We'll process it shortly.");
   };
 
   // Admin update
-  const adminUpdate = (cid, amount, type) => {
-    const a = +amount; if (isNaN(a) || a <= 0) return;
+  const adminUpdate = (cid: number, amount: number, type: "deduct" | "profit" | "deposit") => {
+    if (isNaN(amount) || amount <= 0) return;
     setClients(p => p.map(c => {
       if (c.id !== cid) return c;
-      const nb = type === "deduct" ? Math.max(0, c.balance - a) : c.balance + a;
-      const np = type === "profit" ? c.totalProfit + a : c.totalProfit;
-      const nd = type === "deposit" ? c.totalDeposit + a : c.totalDeposit;
+      const nb = type === "deduct" ? Math.max(0, c.balance - amount) : c.balance + amount;
+      const np = type === "profit" ? c.totalProfit + amount : c.totalProfit;
+      const nd = type === "deposit" ? c.totalDeposit + amount : c.totalDeposit;
       const roi = nd > 0 ? ((np / nd) * 100).toFixed(1) : 0;
-      return { ...c, balance: nb, totalProfit: np, totalDeposit: nd, roi, transactions: [...c.transactions, { id: Date.now(), type, amount: a, date: new Date().toISOString().split("T")[0], status: "confirmed", note: `Admin ${type} update` }] };
+      return { ...c, balance: nb, totalProfit: np, totalDeposit: nd, roi, transactions: [...c.transactions, { id: Date.now(), type, amount: amount, date: new Date().toISOString().split("T")[0], status: "confirmed", note: `Admin ${type} update` }] };
     }));
     notify("Balance updated.");
   };
 
   // Admin approve withdrawal
-  const approveWithdrawal = (cid, rid) => {
+  const approveWithdrawal = (cid: number, rid: number) => {
     setClients(p => p.map(c => {
       if (c.id !== cid) return c;
       const r = c.withdrawalRequests.find(r => r.id === rid); if (!r) return c;
@@ -356,7 +413,7 @@ export default function App() {
   };
 
   // Installment schedule
-  const getSchedule = (pkg, n) => {
+  const getSchedule = (pkg: string, n: number) => {
     const p = PACKAGES.find(p => p.id === pkg);
     if (!p) return [];
     const each = p.min / n;
@@ -440,7 +497,7 @@ export default function App() {
             <p style={{ color: "#8B93A7", fontSize: 13, marginBottom: 20 }}>Available balance: <span style={{ color: "#00C896", fontWeight: 700 }}>{fmt(cu?.balance || 0)}</span></p>
             <div className="form-group">
               <label className="form-label">Amount (USD)</label>
-              <input className="form-input" type="number" placeholder="Enter amount" onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
+              <input className="form-input" type="number" placeholder="Enter amount" onChange={e => setForm(f => ({ ...f, amount: Number(e.target.value) }))} />
             </div>
             <div className="form-group">
               <label className="form-label">Cryptocurrency</label>
@@ -711,7 +768,7 @@ export default function App() {
               {view === "register" && (
                 <div className="form-group">
                   <label className="form-label">Investment Package</label>
-                  <select className="form-input" value={form.package || ""} onChange={e => setForm(f => ({ ...f, package: e.target.value }))}>
+                  <select aria-label="investment package" className="form-input" value={form.package || ""} onChange={e => setForm(f => ({ ...f, package: e.target.value }))}>
                     <option value="">Select a package</option>
                     {PACKAGES.map(p => <option key={p.id} value={p.id}>{p.name} — Min. {fmt(p.min)} · {p.weekly} weekly</option>)}
                   </select>
@@ -905,12 +962,21 @@ export default function App() {
   );
 }
 
-function AdminCard({ client, onUpdate }) {
+interface AdminCardProps {
+  client: Client;
+  onUpdate: (
+    clientId: number,
+    amount: number,
+    type: "deduct" | "profit" | "deposit"
+  ) => void;
+}
+
+function AdminCard({ client, onUpdate }: AdminCardProps) {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState("profit");
   const [amount, setAmount] = useState("");
   const pkg = PACKAGES.find(p => p.id === client.package);
-  const fmt2 = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+  const fmt2 = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 
   return (
     <div className="client-card">
@@ -940,7 +1006,7 @@ function AdminCard({ client, onUpdate }) {
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 16 }}>
             <div>
               <label style={{ display: "block", color: "#8B93A7", fontSize: 11, marginBottom: 5, fontWeight: 700 }}>UPDATE TYPE</label>
-              <select style={{ background: "#060C1A", border: "1px solid #1E2A40", borderRadius: 6, color: "#E8EAF0", padding: "10px 14px", fontSize: 13, fontFamily: "inherit", outline: "none" }} value={type} onChange={e => setType(e.target.value)}>
+              <select aria-label="update type" style={{ background: "#060C1A", border: "1px solid #1E2A40", borderRadius: 6, color: "#E8EAF0", padding: "10px 14px", fontSize: 13, fontFamily: "inherit", outline: "none" }} value={type} onChange={e => setType(e.target.value)}>
                 <option value="profit">Add Profit</option>
                 <option value="deposit">Add Deposit</option>
                 <option value="deduct">Deduct Balance</option>
@@ -950,7 +1016,7 @@ function AdminCard({ client, onUpdate }) {
               <label style={{ display: "block", color: "#8B93A7", fontSize: 11, marginBottom: 5, fontWeight: 700 }}>AMOUNT (USD)</label>
               <input style={{ background: "#060C1A", border: "1px solid #1E2A40", borderRadius: 6, color: "#E8EAF0", padding: "10px 14px", fontSize: 13, fontFamily: "inherit", outline: "none", width: 150 }} type="number" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} />
             </div>
-            <button className="btn btn-gold btn-sm" onClick={() => { onUpdate(client.id, amount, type); setAmount(""); }}>Update Balance</button>
+            <button aria-label="update balance" className="btn btn-gold btn-sm" onClick={() => { onUpdate(Number(client.id), Number(amount), type as "profit" | "deduct" | "deposit"); setAmount(""); }}>Update Balance</button>
           </div>
           {client.transactions.length > 0 && (
             <div>
