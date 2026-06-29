@@ -1,49 +1,44 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import * as SibApiV3Sdk from 'sib-api-v3-sdk';
 
-// Configure Brevo API key
+const apiKey = process.env.BREVO_API_KEY;
+
+if (!apiKey) {
+  console.error("BREVO_API_KEY is not set in environment variables");
+}
+
 const defaultClient = SibApiV3Sdk.ApiClient.instance;
-const apiKey = defaultClient.authentications['api-key'];
-apiKey.apiKey = process.env.BREVO_API_KEY;
+defaultClient.authentications['api-key'].apiKey = apiKey;
 
 const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
-interface EmailRecipient {
-  email: string;
-  name?: string;
-}
-
-interface SendEmailPayload {
-  to: EmailRecipient;
-  subject: string;
-  htmlContent: string;
-  sender?: EmailRecipient;
-}
-
-export default async function (request: VercelRequest, response: VercelResponse) {
-  if (request.method !== 'POST') {
-    return response.status(405).send('Method Not Allowed');
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { to, subject, htmlContent, sender }: SendEmailPayload = request.body;
+  const { to, subject, htmlContent, sender } = req.body;
 
-  if (!to || !to.email || !subject || !htmlContent) {
-    return response.status(400).json({ error: 'Missing required email parameters.' });
+  if (!to?.email || !subject || !htmlContent) {
+    return res.status(400).json({ error: 'Missing required fields' });
   }
-
-  const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-
-  sendSmtpEmail.sender = sender || { email: "no-reply@genesispro.com", name: "GenesisPro" };
-  sendSmtpEmail.to = [to];
-  sendSmtpEmail.subject = subject;
-  sendSmtpEmail.htmlContent = htmlContent;
 
   try {
+    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail({
+      sender: sender || { email: "noreply@unimartapp.acelinebrand.com", name: "Unimart" },
+      to: [to],
+      subject,
+      htmlContent,
+    });
+
     const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
-    console.log('Brevo API called successfully. Returned data: ' + JSON.stringify(data));
-    return response.status(200).json({ message: 'Email sent successfully', data });
+    
+    return res.status(200).json({ message: 'Email sent successfully', data });
   } catch (error: any) {
-    console.error('Error sending email via Brevo API:', error.response ? error.response.text : error);
-    return response.status(500).json({ error: 'Failed to send email', details: error.response ? error.response.text : error.message });
+    console.error('Brevo Error:', error?.response?.text || error);
+    return res.status(500).json({ 
+      error: 'Failed to send email', 
+      details: error?.response?.text || error.message 
+    });
   }
 }
