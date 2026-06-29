@@ -5,6 +5,12 @@ import {
   updateDoc,
   doc,
 } from "firebase/firestore";
+import {
+  sendWelcomeEmail,
+  sendPaymentReportEmail,
+  sendAdminPaymentNotificationEmail,
+  sendPaymentConfirmedEmail
+} from './brevo';
 
 interface Transaction {
   id: number;
@@ -349,6 +355,7 @@ export default function App() {
   const [featTab, setFeatTab] = useState("crypto");
   const [, setMobileMenu] = useState(false);
   const [loading, setLoading] = useState(true);
+  // const [reportedAmount, setReportedAmount] = useState(0);
 
   const go = (v: string) => { setView(v); setErr(""); setForm({}); setMobileMenu(false); window.scrollTo(0, 0); };
   const notify = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3500); };
@@ -427,9 +434,33 @@ export default function App() {
       setUser(createdClient);
       go("dashboard");
       notify("Welcome to GenesisProLtd! Your account is ready.");
+
+      // Send Welcome Email
+      await sendWelcomeEmail(form.email, form.name);
+
     } catch (error) {
       console.error(error);
       setErr("Failed to create account.");
+    }
+  };
+
+  const handlePaymentReported = async () => {
+    const cu = currentUser();
+    if (!cu) return;
+
+    const enteredAmount = prompt("Enter the exact amount you sent (in USD):");
+    if (!enteredAmount) return;
+
+    const amount = parseFloat(enteredAmount);
+
+    const success = await sendPaymentReportEmail(cu.email, cu.name, amount, coin);
+    await sendAdminPaymentNotificationEmail(cu.name, cu.email, amount, coin);
+
+    if (success) {
+      notify(`Payment of $${amount} reported successfully. We are processing it.`);
+      setModal(null);
+    } else {
+      notify("Failed to report payment.", false);
     }
   };
 
@@ -527,6 +558,12 @@ export default function App() {
     else if (type === "deposit") {
       newBalance += amount;
       newTotalDeposit += amount;
+      await sendPaymentConfirmedEmail(
+        client.email,
+        client.name,
+        amount,
+        newBalance
+      );
     } else if (type === "profit") {
       newBalance += amount;
       newTotalProfit += amount;
@@ -713,7 +750,16 @@ export default function App() {
             <p style={{ color: "#8B93A7", fontSize: 13, lineHeight: 1.7, marginBottom: 20 }}>
               After sending, share your transaction hash with your account manager via the community group. Your balance will be updated once confirmed on the blockchain.
             </p>
-            <button className="btn btn-gold btn-full" onClick={() => setModal(null)}>Done</button>
+            <button className="btn btn-gold btn-full" onClick={() => setModal(null)}>Close</button>
+
+            <div style={{ marginTop: 20 }}>
+              <button
+                className="btn btn-green btn-full"
+                onClick={handlePaymentReported}
+              >
+                I Have Made The Payment
+              </button>
+            </div>
           </div>
         </div>
       )}
