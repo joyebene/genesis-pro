@@ -1,19 +1,10 @@
-import * as SibApiV3Sdk from 'sib-api-v3-sdk';
-
-// Configure Brevo API key
-const defaultClient = SibApiV3Sdk.ApiClient.instance;
-const apiKey = defaultClient.authentications['api-key'];
-apiKey.apiKey = (import.meta.env.VITE_BREVO_API_KEY as string) || "YOUR_BREVO_API_KEY";
-
-const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-
 interface EmailRecipient {
   email: string;
   name?: string;
 }
 
 /**
- * Sends a transactional email using Brevo.
+ * Sends a transactional email by calling the serverless API endpoint.
  * @param to - Recipient email address and optional name.
  * @param subject - Subject of the email.
  * @param htmlContent - HTML content of the email.
@@ -23,21 +14,28 @@ export const sendEmail = async (
   to: EmailRecipient,
   subject: string,
   htmlContent: string,
-  sender: EmailRecipient = { email: "noreply@unimartapp.acelinebrand.com", name: "Unimart" }
+  sender?: EmailRecipient
 ) => {
-  const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-
-  sendSmtpEmail.sender = sender;
-  sendSmtpEmail.to = [to];
-  sendSmtpEmail.subject = subject;
-  sendSmtpEmail.htmlContent = htmlContent;
-
   try {
-    const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
-    console.log('API called successfully. Returned data: ' + JSON.stringify(data));
+    const response = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ to, subject, htmlContent, sender }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('Failed to send email:', data.error);
+      return false;
+    }
+
+    console.log('Email sent successfully via API:', data.message);
     return true;
   } catch (error) {
-    console.error('Error sending email:', error);
+    console.error('Error calling send-email API:', error);
     return false;
   }
 };
@@ -95,7 +93,7 @@ export const sendPaymentReportEmail = async (recipientEmail: string, recipientNa
  * @param coin - The cryptocurrency used for payment.
  */
 export const sendAdminPaymentNotificationEmail = async (clientName: string, clientEmail: string, amount: number, coin: string) => {
-  const adminEmail = "admin@genesispro.com"; // Replace with your actual admin email
+  const adminEmail = "noreply@unimartapp.acelinebrand.com"; // Replace with your actual admin email
   const subject = `New Payment Reported by ${clientName}`;
   const htmlContent = `
     <html>
