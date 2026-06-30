@@ -1,82 +1,26 @@
-import { BrevoClient } from "@getbrevo/brevo";
-import dotenv from "dotenv";
-
-dotenv.config();
-
-const {
-  BREVO_API_KEY,
-  BREVO_FROM_EMAIL,
-  BREVO_FROM_NAME,
-  ADMIN_EMAIL,
-} = process.env;
-
-if (!BREVO_API_KEY) {
-  throw new Error("BREVO_API_KEY is missing");
-}
-
-if (!BREVO_FROM_EMAIL) {
-  throw new Error("BREVO_FROM_EMAIL is missing");
-}
-
-if (!BREVO_FROM_NAME) {
-  throw new Error("BREVO_FROM_NAME is missing");
-}
-
-if (!ADMIN_EMAIL) {
-  throw new Error("ADMIN_EMAIL is missing");
-}
-
 interface EmailRecipient {
-    email: string;
-    name?: string;
+  email: string;
+  name?: string;
 }
-
-const brevo = new BrevoClient({
-    apiKey: process.env.BREVO_API_KEY!,
-});
-
-const DEFAULT_SENDER: EmailRecipient = {
-    email: process.env.BREVO_FROM_EMAIL!,
-    name: process.env.BREVO_FROM_NAME!,
-};
 
 export const sendEmail = async (
-    to: EmailRecipient,
-    subject: string,
-    htmlContent: string,
-    sender: EmailRecipient = DEFAULT_SENDER
-): Promise<boolean> => {
-    try {
-        await brevo.transactionalEmails.sendTransacEmail({
-            sender: {
-                email: sender.email,
-                name: sender.name,
-            },
-            to: [
-                {
-                    email: to.email,
-                    name: to.name,
-                },
-            ],
-            subject,
-            htmlContent,
-            textContent: htmlContent.replace(/<[^>]*>/g, ""),
-        });
+  to: EmailRecipient,
+  subject: string,
+  htmlContent: string
+) => {
+  const response = await fetch("/api/send-email", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      to,
+      subject,
+      htmlContent,
+    }),
+  });
 
-        console.log("✅ Email sent successfully");
-        return true;
-    } catch (error: any) {
-        console.error("Brevo Error");
-
-        if (error.body) {
-            console.error(error.body);
-        } else if (error.response) {
-            console.error(error.response);
-        } else {
-            console.error(error);
-        }
-        return false;
-    }
+  return response.ok;
 };
 
 /**

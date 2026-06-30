@@ -10,7 +10,7 @@ import {
   sendPaymentReportEmail,
   sendAdminPaymentNotificationEmail,
   sendPaymentConfirmedEmail
-} from './brevo';
+} from './email';
 
 interface Transaction {
   id: number;
