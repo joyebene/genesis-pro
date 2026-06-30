@@ -3,6 +3,29 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+const {
+  BREVO_API_KEY,
+  BREVO_FROM_EMAIL,
+  BREVO_FROM_NAME,
+  ADMIN_EMAIL,
+} = process.env;
+
+if (!BREVO_API_KEY) {
+  throw new Error("BREVO_API_KEY is missing");
+}
+
+if (!BREVO_FROM_EMAIL) {
+  throw new Error("BREVO_FROM_EMAIL is missing");
+}
+
+if (!BREVO_FROM_NAME) {
+  throw new Error("BREVO_FROM_NAME is missing");
+}
+
+if (!ADMIN_EMAIL) {
+  throw new Error("ADMIN_EMAIL is missing");
+}
+
 interface EmailRecipient {
     email: string;
     name?: string;
@@ -109,7 +132,7 @@ export const sendPaymentReportEmail = async (recipientEmail: string, recipientNa
  * @param coin - The cryptocurrency used for payment.
  */
 export const sendAdminPaymentNotificationEmail = async (clientName: string, clientEmail: string, amount: number, coin: string) => {
-    const adminEmail = "admin@genesisprohub.com";
+    const adminEmail = process.env.ADMIN_EMAIL!;
     const subject = `New Payment Reported by ${clientName}`;
     const htmlContent = `
     <html>
