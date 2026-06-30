@@ -1,43 +1,59 @@
+import { BrevoClient } from "@getbrevo/brevo";
+import dotenv from "dotenv";
+
+dotenv.config();
+
 interface EmailRecipient {
-  email: string;
-  name?: string;
+    email: string;
+    name?: string;
 }
 
-/**
- * Sends a transactional email by calling the serverless API endpoint.
- * @param to - Recipient email address and optional name.
- * @param subject - Subject of the email.
- * @param htmlContent - HTML content of the email.
- * @param sender - Sender email address and optional name. Defaults to a generic sender.
- */
+const brevo = new BrevoClient({
+    apiKey: process.env.BREVO_API_KEY!,
+});
+
+const DEFAULT_SENDER: EmailRecipient = {
+    email: process.env.BREVO_FROM_EMAIL!,
+    name: process.env.BREVO_FROM_NAME!,
+};
+
 export const sendEmail = async (
-  to: EmailRecipient,
-  subject: string,
-  htmlContent: string,
-  sender?: EmailRecipient
-) => {
-  try {
-    const response = await fetch('/api/send-email', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ to, subject, htmlContent, sender }),
-    });
+    to: EmailRecipient,
+    subject: string,
+    htmlContent: string,
+    sender: EmailRecipient = DEFAULT_SENDER
+): Promise<boolean> => {
+    try {
+        await brevo.transactionalEmails.sendTransacEmail({
+            sender: {
+                email: sender.email,
+                name: sender.name,
+            },
+            to: [
+                {
+                    email: to.email,
+                    name: to.name,
+                },
+            ],
+            subject,
+            htmlContent,
+            textContent: htmlContent.replace(/<[^>]*>/g, ""),
+        });
 
-    const data = await response.json();
+        console.log("✅ Email sent successfully");
+        return true;
+    } catch (error: any) {
+        console.error("Brevo Error");
 
-    if (!response.ok) {
-      console.error('Failed to send email:', data.error);
-      return false;
+        if (error.body) {
+            console.error(error.body);
+        } else if (error.response) {
+            console.error(error.response);
+        } else {
+            console.error(error);
+        }
+        return false;
     }
-
-    console.log('Email sent successfully via API:', data.message);
-    return true;
-  } catch (error) {
-    console.error('Error calling send-email API:', error);
-    return false;
-  }
 };
 
 /**
@@ -46,8 +62,8 @@ export const sendEmail = async (
  * @param recipientName - The name of the new user.
  */
 export const sendWelcomeEmail = async (recipientEmail: string, recipientName: string) => {
-  const subject = "Welcome to GenesisPro!";
-  const htmlContent = `
+    const subject = "Welcome to GenesisPro!";
+    const htmlContent = `
     <html>
       <body>
         <p>Hello ${recipientName},</p>
@@ -58,7 +74,7 @@ export const sendWelcomeEmail = async (recipientEmail: string, recipientName: st
       </body>
     </html>
   `;
-  return sendEmail({ email: recipientEmail, name: recipientName }, subject, htmlContent);
+    return sendEmail({ email: recipientEmail, name: recipientName }, subject, htmlContent);
 };
 
 /**
@@ -69,8 +85,8 @@ export const sendWelcomeEmail = async (recipientEmail: string, recipientName: st
  * @param coin - The cryptocurrency used for payment.
  */
 export const sendPaymentReportEmail = async (recipientEmail: string, recipientName: string, amount: number, coin: string) => {
-  const subject = "Payment Received - Processing Your Deposit";
-  const htmlContent = `
+    const subject = "Payment Received - Processing Your Deposit";
+    const htmlContent = `
     <html>
       <body>
         <p>Hello ${recipientName},</p>
@@ -82,7 +98,7 @@ export const sendPaymentReportEmail = async (recipientEmail: string, recipientNa
       </body>
     </html>
   `;
-  return sendEmail({ email: recipientEmail, name: recipientName }, subject, htmlContent);
+    return sendEmail({ email: recipientEmail, name: recipientName }, subject, htmlContent);
 };
 
 /**
@@ -93,9 +109,9 @@ export const sendPaymentReportEmail = async (recipientEmail: string, recipientNa
  * @param coin - The cryptocurrency used for payment.
  */
 export const sendAdminPaymentNotificationEmail = async (clientName: string, clientEmail: string, amount: number, coin: string) => {
-  const adminEmail = "noreply@unimartapp.acelinebrand.com"; // Replace with your actual admin email
-  const subject = `New Payment Reported by ${clientName}`;
-  const htmlContent = `
+    const adminEmail = "admin@genesisprohub.com";
+    const subject = `New Payment Reported by ${clientName}`;
+    const htmlContent = `
     <html>
       <body>
         <p>Hello Admin,</p>
@@ -111,7 +127,7 @@ export const sendAdminPaymentNotificationEmail = async (clientName: string, clie
       </body>
     </html>
   `;
-  return sendEmail({ email: adminEmail, name: "Admin" }, subject, htmlContent);
+    return sendEmail({ email: adminEmail, name: "Admin" }, subject, htmlContent);
 };
 
 /**
@@ -122,8 +138,8 @@ export const sendAdminPaymentNotificationEmail = async (clientName: string, clie
  * @param newBalance - The user's new balance.
  */
 export const sendPaymentConfirmedEmail = async (recipientEmail: string, recipientName: string, amount: number, newBalance: number) => {
-  const subject = "Your Payment Has Been Confirmed!";
-  const htmlContent = `
+    const subject = "Your Payment Has Been Confirmed!";
+    const htmlContent = `
     <html>
       <body>
         <p>Hello ${recipientName},</p>
@@ -135,5 +151,5 @@ export const sendPaymentConfirmedEmail = async (recipientEmail: string, recipien
       </body>
     </html>
   `;
-  return sendEmail({ email: recipientEmail, name: recipientName }, subject, htmlContent);
+    return sendEmail({ email: recipientEmail, name: recipientName }, subject, htmlContent);
 };
